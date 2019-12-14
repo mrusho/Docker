@@ -1,0 +1,1 @@
+2019/12/06 20:47:23 [emerg] 1#1: host not found in upstream "node:9000" in /etc/nginx/conf.d/upstream.conf:1

@@ -1,0 +1,20 @@
+FROM mcr.microsoft.com/netcore/core/sdk:3.0 AS build
+WORKDIR /app
+
+# copy csproj and restore as distinct layers
+COPY ../projects/netcore/*.sln .
+COPY ../projects/netcore/*.csproj ./netcore/
+RUN netcore restore
+
+# copy everything else and build app
+COPY ../projects/netcore. ./netcore/
+WORKDIR /app/netcore
+RUN netcore publish -c Release -o out
+
+
+FROM mcr.microsoft.com/netcore/core/aspnet:3.0 AS runtime
+WORKDIR /app
+COPY --from=build /app/netcore/out ./
+
+ENV ASPNETCORE_URLS http://+:5000
+ENTRYPOINT ["netcore", "aspnetapp.dll"]

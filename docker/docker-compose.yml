@@ -1,0 +1,144 @@
+version: '3'
+networks:
+  frontend:
+    driver: ${NETWORKS_DRIVER}
+  backend:
+    driver: ${NETWORKS_DRIVER}
+volumes:
+  mariadb:
+    driver: ${VOLUMES_DRIVER}
+  elasticsearch:
+    driver: ${VOLUMES_DRIVER}
+services:
+
+### Workspace ####################
+  workspace:
+    build:
+      context: ./workspace
+      args:
+        - NODE_VERSION=${NODE_VERSION}
+        - NODE_ENV=${NODE_ENV}
+        - YARN_VERSION=${WORKSPACE_YARN_VERSION}
+        - INSTALL_NODE=${WORKSPACE_INSTALL_NODE}
+        - NPM_REGISTRY=${WORKSPACE_NPM_REGISTRY}
+        - INSTALL_YARN=${WORKSPACE_INSTALL_YARN}
+        - INSTALL_NPM_ANGULAR_CLI=${WORKSPACE_INSTALL_NPM_ANGULAR_CLI}
+        - INSTALL_WORKSPACE_SSH=${WORKSPACE_INSTALL_WORKSPACE_SSH}
+        - INSTALL_PYTHON=${WORKSPACE_INSTALL_PYTHON}
+        - INSTALL_IMAGE_OPTIMIZERS=${WORKSPACE_INSTALL_IMAGE_OPTIMIZERS}
+        - INSTALL_IMAGEMAGICK=${WORKSPACE_INSTALL_IMAGEMAGICK}
+        - INSTALL_LIBPNG=${WORKSPACE_INSTALL_LIBPNG}
+        - PUID=${WORKSPACE_PUID}
+        - PGID=${WORKSPACE_PGID}
+        - TZ=${WORKSPACE_TIMEZONE}
+    volumes:
+      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
+    extra_hosts:
+      - "dockerhost:${DOCKER_HOST_IP}"
+    ports:
+      - "${WORKSPACE_SSH_PORT}:22"
+    tty: true
+    environment: {}
+    networks:
+      - frontend
+      - backend
+
+### Node ####################
+  node:
+    build:
+      context: ./node
+      args:
+        - NODE_VERSION=${NODE_VERSION}
+        - YARN_VERSION=${NODE_YARN_VERSION}
+        - INSTALL_YARN=${NODE_INSTALL_YARN}
+        - INSTALL_INTL=${NODE_INSTALL_INTL}
+        - INSTALL_GHOSTSCRIPT=${NODE_INSTALL_GHOSTSCRIPT}
+        - INSTALL_IMAGE_OPTIMIZERS=${NODE_INSTALL_IMAGE_OPTIMIZERS}
+        - INSTALL_IMAGEMAGICK=${NODE_INSTALL_IMAGEMAGICK}
+        - NPM_START_SCRIPT=${NODE_NPM_START_SCRIPT}
+    volumes:
+      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
+    expose:
+      - "9000"
+      - "9229"
+    extra_hosts:
+      - "dockerhost:${DOCKER_HOST_IP}"
+    environment:
+      - DOCKER_HOST=tcp://docker-in-docker:2375
+    depends_on:
+      - workspace
+    networks:
+      - backend
+    links:
+      - docker-in-docker
+
+### Nginx ####################
+  nginx:
+    build:
+      context: ./nginx
+      args:
+        - NODE_UPSTREAM_CONTAINER=${NGINX_NODE_UPSTREAM_CONTAINER}
+        - NODE_UPSTREAM_PORT=${NGINX_NODE_UPSTREAM_PORT}
+    volumes:
+      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
+      - ${NGINX_HOST_LOG_PATH}:/var/log/nginx
+      - ${NGINX_SITES_PATH}:/etc/nginx/sites-available
+    ports:
+      - "${NGINX_HOST_HTTP_PORT}:80"
+      - "${NGINX_HOST_HTTPS_PORT}:443"
+      - "${NGINX_HOST_DEV_PORT}:4200"
+    depends_on:
+      - node
+    networks:
+      - frontend
+      - backend
+
+### Dotnet ####################
+  dotnet:
+    build:
+      context: ./dotnet
+    volumes: 
+      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
+    expose:
+      - "5000"
+    depends_on: 
+      - workspace
+    networks:
+      - backend
+    restart: always
+    links:
+      - docker-in-docker
+
+
+### ElasticSearch ####################
+  elasticsearch:
+    build: ./elasticsearch
+    volumes:
+      - elasticsearch:/usr/share/elasticsearch/data
+    environment:
+      - cluster.name=nodedock-cluster
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "${ELASTICSEARCH_HOST_HTTP_PORT}:9200"
+      - "${ELASTICSEARCH_HOST_TRANSPORT_PORT}:9300"
+    depends_on:
+      - node
+    networks:
+      - frontend
+      - backend
+
+### Docker-in-Docker ####################
+  docker-in-docker:
+    image: docker:dind
+    privileged: true
+    volumes:
+      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
+    expose:
+      - 2375
+    networks:
+      - backend
